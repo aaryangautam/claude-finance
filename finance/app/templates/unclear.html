@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% set active = 'unclear' %}
+{% block content %}
+<h1>Unclear queue <span class="muted" style="font-weight:normal">{{ rows|length }} merchants{{ ' in ' ~ month if month }}</span></h1>
+<p class="muted">Read-only. Merchants with no category, a low-confidence (&lt; {{ threshold }}) LLM/Plaid guess, or an unmatched transfer leg.
+Corrections happen in the monthly review conversation: <code>uv run finance categorize correct "&lt;merchant&gt;" &lt;category&gt;</code>.</p>
+<div class="card">
+<table>
+  <tr><th>Merchant</th><th class="num">n</th><th class="num">Total $</th><th>Last</th><th>Guess</th><th>Source</th><th class="num">Conf</th><th>Reason</th></tr>
+  {% for r in rows %}
+  <tr><td>{{ r.merchant_norm }}</td><td class="num">{{ r.n }}</td><td class="num">{{ r.total_usd }}</td><td class="muted">{{ r.last }}</td>
+    <td><code>{{ r.category or '' }}</code></td><td class="muted">{{ r.category_source or '' }}</td>
+    <td class="num">{{ '%.2f'|format(r.category_confidence) if r.category_confidence else '' }}</td><td class="warn">{{ r.reasons or '' }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">Queue is empty.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}

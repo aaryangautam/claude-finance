@@ -1,0 +1,15 @@
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+exports/
+work/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+.DS_Store
+config.toml
+vault/

@@ -1,0 +1,87 @@
+{% extends "base.html" %}{% set active = 'accounts' %}
+{% block content %}
+<h1>Accounts / Link <span class="muted" style="font-weight:normal">({{ env }})</span></h1>
+
+{% if not schema_ok %}<div class="note">Budget Schema not found or invalid. Mapping needs it: run the <code>finance-budget-schema-ingestion</code> skill first.</div>{% endif %}
+
+<div class="card">
+  <h2>Link a new institution</h2>
+  <p class="muted">Opens Plaid Link. The access token is written to <code>.env</code>; it is never shown here.</p>
+  <select id="inst">
+    {% for inst in institutions %}<option>{{ inst }}</option>{% endfor %}
+  </select>
+  <button class="primary" onclick="linkNew()">Link</button>
+  <span id="link-status" class="muted"></span>
+</div>
+
+<div class="card">
+  <h2>Linked items</h2>
+  <table>
+    <tr><th>Institution</th><th>Status</th><th>Products</th><th>Last synced</th><th>Error</th><th></th></tr>
+    {% for it in items %}
+    <tr>
+      <td>{{ it.institution }}</td>
+      <td class="{{ 'bad' if it.status != 'ok' }}">{{ it.status }}</td>
+      <td class="muted">{{ it.products }}</td>
+      <td class="muted">{{ it.last_synced or 'never' }}</td>
+      <td class="bad">{{ it.last_error or '' }}</td>
+      <td><button onclick="reauth('{{ it.item_id }}')">Re-auth</button></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">Nothing linked yet.</td></tr>{% endfor %}
+  </table>
+  <p class="muted">Sync from the terminal: <code>uv run finance sync all</code></p>
+</div>
+
+<div class="card">
+  <h2>Accounts</h2>
+  <table>
+    <tr><th>Id</th><th>Institution</th><th>Type</th><th>Cur</th><th>Name</th><th>Map to schema id</th></tr>
+    {% for a in accounts %}
+    <tr>
+      <td><code>{{ a.id }}</code></td><td>{{ a.institution }}</td><td>{{ a.type }}</td><td>{{ a.currency }}</td><td class="muted">{{ a.name or '' }}</td>
+      <td>
+        {% if a.id.startswith('plaid:') and free_schema_ids %}
+        <form method="post" action="/accounts/map" style="display:flex;gap:6px">
+          <input type="hidden" name="old_id" value="{{ a.id }}">
+          <select name="new_id">{% for sid in free_schema_ids %}<option>{{ sid }}</option>{% endfor %}</select>
+          <button>Map</button>
+        </form>
+        {% elif a.id.startswith('plaid:') %}<span class="warn">unmapped</span>{% else %}<span class="ok">mapped</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+async function post(url, data) {
+  const r = await fetch(url, {method:'POST', body: data});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function openLink(tokenForm, onSuccess) {
+  const st = document.getElementById('link-status');
+  st.textContent = 'creating link token…';
+  const {link_token} = await post('/link/token', tokenForm);
+  const h = Plaid.create({ token: link_token,
+    onSuccess: async (public_token, meta) => { st.textContent = 'exchanging…'; await onSuccess(public_token, meta); location.reload(); },
+    onExit: (err) => { st.textContent = err ? ('exit: ' + (err.display_message || err.error_code)) : ''; } });
+  h.open();
+}
+function linkNew() {
+  const inst = document.getElementById('inst').value;
+  openLink(new FormData(), async (public_token) => {
+    const fd = new FormData(); fd.set('public_token', public_token); fd.set('institution', inst);
+    await post('/link/exchange', fd);
+  }).catch(e => document.getElementById('link-status').textContent = e.message);
+}
+function reauth(item_id) {
+  const fd = new FormData(); fd.set('item_id', item_id);
+  openLink(fd, async () => { const f = new FormData(); f.set('item_id', item_id); await post('/link/reauth-done', f); })
+    .catch(e => document.getElementById('link-status').textContent = e.message);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+# Non-secret configuration. Copy to config.toml (gitignored) and edit. Secrets live in .env.
+#
+# Every pattern below is a case-insensitive substring matched against a transaction's raw description
+# (merchant_raw), as your bank prints it. Run `uv run finance sync all` once, look at what your descriptors
+# actually say (`sqlite3 finance.db "SELECT DISTINCT merchant_raw FROM transactions LIMIT 50"`), then fill these in.
+
+[paths]
+# The Finance folder inside your Obsidian vault: holds Budget Schema.md, Goals/, Investment Strategy.md, Reviews/.
+# Absolute, ~-relative, or relative to this repo. The default is a plain folder inside the repo (gitignored) that
+# `finance init` creates with a starter Budget Schema; point it at your Obsidian vault when you have one.
+vault_finance = "vault/Finance"
+db = "finance.db"
+work = "work"
+exports = "exports"
+
+[link]
+# Institutions offered in the Plaid Link dropdown on the Accounts page. The label only names the Item and its
+# .env token key (PLAID_TOKEN_<LABEL>); Plaid Link itself lets you search for any institution it supports.
+institutions = ["Checking Bank", "Credit Card", "Brokerage"]
+
+[categorizer]
+# Below this confidence a merchant lands in the unclear queue instead of being applied.
+unclear_threshold = 0.8
+# Category id applied to reimbursement inflows from [reimbursements] senders (must exist in the Budget Schema).
+reimbursement_category = "phone"
+# merchant_raw substrings whose category varies per transaction: never merchant-mapped, never sent to the LLM;
+# each one waits in the unclear queue for `finance categorize correct --txn <id> <category>`.
+per_transaction_patterns = ["ZELLE", "VENMO"]
+
+[matcher]
+# Days either side of a transfer leg to look for its counterpart. Card payments can post ~4 days apart.
+window_days = 5
+# Tolerance in USD after FX, for Wise legs where rates round.
+amount_tolerance_usd = 1.00
+
+[matcher.transfer_patterns]
+# Substrings in a HUB-account descriptor that mark it as a transfer leg. An outflow matching one of these that
+# finds no counterpart lands in the review queue instead of being counted as spending. Group names are labels only.
+credit = ["AMEX EPAYMENT", "AMERICAN EXPRESS", "CHASE CREDIT CRD", "CAPITAL ONE", "CITI AUTOPAY", "DISCOVER E-PAYMENT"]
+investing = ["ROBINHOOD", "FIDELITY", "SCHWAB", "VANGUARD"]
+wise = ["WISE", "TRANSFERWISE"]
+savings = ["TRANSFER TO SAVINGS", "INTERNAL TRANSFER", "ONLINE TRANSFER TO"]
+
+[categorizer.rules]
+# Deterministic categorization before merchant_map. Category ids must exist in the Budget Schema.
+# Payroll deposits into the hub account (patterns in [income]) get this category:
+income_category = "income_pay"
+
+# Plaid personal-finance-category PRIMARY -> schema category id, used once to seed merchant_map (source=plaid,
+# low confidence, so Claude still reviews them). Ids that don't exist in the schema are skipped with a warning.
+[categorizer.plaid_seed]
+FOOD_AND_DRINK = "dining"
+GENERAL_MERCHANDISE = "shopping_household"
+TRANSPORTATION = "transport"
+TRAVEL = "travel"
+ENTERTAINMENT = "entertainment"
+MEDICAL = "health"
+PERSONAL_CARE = "health"
+GENERAL_SERVICES = "other"
+HOME_IMPROVEMENT = "shopping_household"
+RENT_AND_UTILITIES = "utilities"
+[categorizer.plaid_seed_detailed]
+FOOD_AND_DRINK_GROCERIES = "groceries"
+TRANSPORTATION_GAS = "transport"
+GENERAL_SERVICES_SUBSCRIPTIONS = "subscriptions"
+ENTERTAINMENT_STREAMING = "subscriptions"
+GENERAL_MERCHANDISE_GIFTS = "gifts"
+TRANSFER_OUT_WITHDRAWAL = "cash_atm"
+
+[reimbursements]
+# People who pay you back for shared costs. Their payments are reimbursements (negative spend in a category),
+# never income. Leave the lists empty if this doesn't apply to you.
+#
+# Wise: sender names (substring of the Wise senderName / description) -> reimbursement_category above.
+senders = []   # e.g. ["jane doe", "john roe"]
+
+[reimbursements.wise_categories]
+# Wise senders whose paybacks net against a category other than reimbursement_category.
+# "some refund gmbh" = "shopping_household"
+
+[reimbursements.zelle]
+# Zelle senders (substring of the hub description) paying back split spending.
+# Value = the category the payback nets against; "" = it varies, so it waits in the unclear queue for a
+# per-transaction pick with `finance categorize correct --txn <id> <category>`.
+# "jane doe" = "travel"
+# "john roe" = ""
+
+[fx]
+# Base for non-Wise legs. Wise transfer records override this for Wise legs.
+provider = "frankfurter"   # ECB daily via frankfurter.app
+base = "USD"
+
+[income]
+# Substring matched against merchant_raw on the hub account to identify pay deposits. Use your employer's
+# payroll descriptor, e.g. "ACME CORP PAYROLL", "DIRECT DEP", "GUSTO", "ADP".
+payroll_patterns = ["PAYROLL", "DIRECT DEP"]
+# Hub inflows that are income but not pay (tax refunds, bonuses) -> other_income_category, if it is in the schema.
+other_patterns = ["TAX REF", "IRS TREAS"]
+other_income_category = "income_other"
+
+[snapshot]
+log = "~/Library/Logs/finance-snapshot.log"
+
+[schedule]
+# Used by `finance install-schedule` (macOS launchd). Times are local.
+label_prefix = "local.finance"
+sync_hour = 6            # daily: sync all + categorize run (no LLM involved)
+sync_minute = 30
+snapshot_weekday = 0     # weekly balances + holdings snapshot; 0 = Sunday
+snapshot_hour = 9
+snapshot_minute = 0

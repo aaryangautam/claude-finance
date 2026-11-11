@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Finance</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --fg:#1a1a1a; --muted:#666; --bg:#fafafa; --card:#fff; --line:#e3e3e3; --accent:#2563eb; --warn:#b45309; --bad:#b91c1c; --ok:#15803d; }
+  body { font: 14px/1.45 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
+  nav { display:flex; gap:18px; padding: 12px 22px; background: var(--card); border-bottom:1px solid var(--line); }
+  nav a { color: var(--muted); text-decoration:none; font-weight:500; } nav a.active { color: var(--fg); }
+  main { max-width: 1100px; margin: 0 auto; padding: 22px; }
+  h1 { font-size: 20px; margin: 0 0 16px; } h2 { font-size: 15px; margin: 22px 0 8px; color: var(--muted); font-weight:600; text-transform: uppercase; letter-spacing:.04em; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align:left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; } td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); } .warn { color: var(--warn); } .bad { color: var(--bad); } .ok { color: var(--ok); }
+  button, select, input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: #fff; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; } @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .note { background:#fff8e6; border:1px solid #f1d58a; padding:10px 12px; border-radius:6px; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/dashboard" class="{{ 'active' if active=='dashboard' }}">Dashboard</a>
+  <a href="/accounts" class="{{ 'active' if active=='accounts' }}">Accounts / Link</a>
+  <a href="/unclear" class="{{ 'active' if active=='unclear' }}">Unclear queue</a>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

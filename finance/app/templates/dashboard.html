@@ -1,0 +1,77 @@
+{% extends "base.html" %}{% set active = 'dashboard' %}
+{% block content %}
+<h1>Dashboard
+  <form style="display:inline" method="get">
+    <select name="month" onchange="this.form.submit()">
+      {% for m in months %}<option {{ 'selected' if m==month }}>{{ m }}</option>{% endfor %}
+      {% if month not in months %}<option selected>{{ month }}</option>{% endif %}
+    </select>
+  </form>
+</h1>
+{% if not schema_ok %}<div class="note">Budget Schema not found or invalid; planned amounts unavailable.</div>{% endif %}
+{% if plan_error %}<div class="note warn">Plan vs actual unavailable: {{ plan_error }}</div>{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Planned vs actual, {{ month }} (budget view)</h2>
+    <canvas id="pva" height="320"></canvas>
+    {% if uncategorized %}<p class="warn">Uncategorized spend this month: ${{ '%.2f'|format(uncategorized) }} — see the unclear queue.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Net worth (from snapshots)</h2>
+    {% if net_worth %}<canvas id="nw" height="320"></canvas>
+    {% else %}<p class="muted">No snapshots yet. Run <code>uv run finance snapshot</code>; the launchd job takes one weekly.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Observed net income vs planned</h2>
+  <table>
+    <tr><th>Month</th><th class="num">Observed deposits</th><th class="num">Planned net</th><th class="num">Variance</th></tr>
+    {% for r in income %}
+    <tr><td>{{ r.m }}</td><td class="num">{{ '%.2f'|format(r.observed) }}</td>
+      <td class="num muted">{{ '%.2f'|format(planned_net) if planned_net is not none else '-' }}</td>
+      <td class="num {{ 'bad' if planned_net is not none and r.observed < planned_net }}">{{ '%.2f'|format(r.observed - planned_net) if planned_net is not none else '-' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No payroll deposits categorized yet.</td></tr>{% endfor %}
+  </table>
+  <p class="muted">Variance from pay that moves with the exchange rate, bonuses or overtime is a number, not an error.</p>
+</div>
+
+<div class="card">
+  <h2>Category table</h2>
+  <table>
+    <tr><th>Category</th><th>Group</th><th class="num">Planned (USD)</th><th class="num">Actual</th><th class="num">Δ</th><th class="num">% used</th><th class="num">Pace → month end</th><th>Fixed paid</th></tr>
+    {% for c in cats %}
+    <tr><td><code>{{ c.id }}</code></td><td class="muted">{{ c.group }}</td>
+      <td class="num">{{ '%.0f'|format(c.planned) }}</td><td class="num">{{ '%.2f'|format(c.actual) }}</td>
+      <td class="num {{ 'bad' if c.actual > c.planned and c.group=='expenses' }}">{{ '%.2f'|format(c.actual - c.planned) }}</td>
+      <td class="num muted">{{ '%.0f%%'|format(c.pct) if c.pct is not none else '-' }}</td>
+      <td class="num">{{ '%.2f'|format(c.projected) if c.projected is not none else '' }}</td>
+      <td>{{ ('yes' if c.paid else 'not yet') if c.paid is not none else '' }}{% if c.reimbursed %} <span class="muted">(net of ${{ '%.2f'|format(c.reimbursed) }} reimbursed)</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const cats = {{ cats|tojson }};
+const nw = {{ net_worth|tojson }};
+if (cats.length) new Chart(document.getElementById('pva'), {
+  type: 'bar',
+  data: { labels: cats.map(c => c.id),
+    datasets: [{label:'Planned', data: cats.map(c => c.planned), backgroundColor:'#c7d2fe'},
+               {label:'Actual', data: cats.map(c => c.actual), backgroundColor:'#2563eb'}] },
+  options: { indexAxis: 'y', responsive: true, plugins: {legend:{position:'bottom'}}, scales:{x:{beginAtZero:true}} }
+});
+if (nw.length) new Chart(document.getElementById('nw'), {
+  type: 'line',
+  data: { labels: nw.map(r => r.date),
+    datasets: [{label:'Net worth', data: nw.map(r => r.net_worth_usd), borderColor:'#2563eb', tension:.2},
+               {label:'Assets', data: nw.map(r => r.assets_usd), borderColor:'#15803d', tension:.2, borderDash:[4,3]},
+               {label:'Liabilities', data: nw.map(r => r.liabilities_usd), borderColor:'#b91c1c', tension:.2, borderDash:[4,3]}] },
+  options: { responsive: true, plugins:{legend:{position:'bottom'}} }
+});
+</script>
+{% endblock %}

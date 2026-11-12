@@ -40,13 +40,13 @@
     <tr>
       <td><code>{{ a.id }}</code></td><td>{{ a.institution }}</td><td>{{ a.type }}</td><td>{{ a.currency }}</td><td class="muted">{{ a.name or '' }}</td>
       <td>
-        {% if a.id.startswith('plaid:') and free_schema_ids %}
+        {% if ':' in a.id and free_schema_ids %}
         <form method="post" action="/accounts/map" style="display:flex;gap:6px">
           <input type="hidden" name="old_id" value="{{ a.id }}">
           <select name="new_id">{% for sid in free_schema_ids %}<option>{{ sid }}</option>{% endfor %}</select>
           <button>Map</button>
         </form>
-        {% elif a.id.startswith('plaid:') %}<span class="warn">unmapped</span>{% else %}<span class="ok">mapped</span>{% endif %}
+        {% elif ':' in a.id %}<span class="warn">unmapped</span>{% else %}<span class="ok">mapped</span>{% endif %}
       </td>
     </tr>
     {% endfor %}

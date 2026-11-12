@@ -1,13 +1,13 @@
 # Finance (data layer)
 
-Local-first personal finance. Plaid (+ optional Wise) → `finance.db` (SQLite, ground truth). Deterministic scripts do
+Local-first personal finance. Plaid (+ optional providers, e.g. Wise) → `finance.db` (SQLite, ground truth). Deterministic scripts do
 transfer netting, categorization, aggregation. Claude reasons over the notes in the vault Finance folder
 (`[paths] vault_finance` in `config.toml`: Budget Schema, Goals, Investment Strategy, Reviews), never over the raw log.
 
 ## Standing rules
 
 - **Read-only everywhere.** No code path can move money or place a trade. Keep it that way.
-- **Fail loudly.** Missing .env key, unreachable Plaid/Wise, malformed Budget Schema → raise. No silent fallbacks.
+- **Fail loudly.** Missing .env key, unreachable Plaid/provider, malformed Budget Schema → raise. No silent fallbacks.
 - **Token cost stays flat.** For Q&A, run SQL over the views and explain the aggregates. Don't read `raw_json`.
   Don't page through `transactions`; `GROUP BY` first.
 - **Nothing lives only in chat.** A correction goes through `finance categorize correct`; a plan change goes through
@@ -23,7 +23,7 @@ uv run finance status                    # items, accounts, counts, last runs
 uv run finance schema                    # parsed Budget Schema
 uv run finance app                       # localhost:8765 — Plaid Link, account mapping, dashboard, unclear queue
 uv run finance link-sandbox              # PLAID_ENV=sandbox: link a test Item without the browser
-uv run finance sync all|plaid|wise       # ingest (plaid: --item <label>; wise: --days 90; `all` skips Wise without a token)
+uv run finance sync all|plaid|<provider> # ingest (plaid: --item <label>; providers: --days N); providers = [providers.<name>] in config.toml
 uv run finance snapshot                  # balances + holdings (launchd runs this weekly)
 uv run finance categorize run            # matcher → normalize → rules → merchant_map → work/uncategorized.json
    /finance-categorize                   # (Claude Code skill) → work/categorized.json
@@ -44,12 +44,12 @@ uv run pytest
 
 ## Data model (sign convention: amount > 0 = money INTO the account)
 
-- `accounts` — id is the schema id (`checking`, `card_everyday`, `wise_eur`…) once mapped; `plaid:<id>` until then. `role` from the schema drives the matcher.
+- `accounts` — id is the schema id (`checking`, `card_everyday`, `wise_eur`…) once mapped; `plaid:<id>` / `<provider>:<id>` until then (schema ids never contain `:`). Provider accounts carry `provider` + `provider_account_id`. `role` from the schema drives the matcher.
 - `transactions` — one row per posted line. `amount_usd` after FX. `is_transfer` rows are internal moves (both legs share `transfer_group_id`).
   `category` is a schema id; `category_source` ∈ user|rule|llm|plaid; `needs_review` + `review_reason` = unmatched transfer legs.
 - `merchant_map` — `merchant_norm → category`. `source='user'` rows are never overwritten.
 - `balance_snapshots` / `holdings_snapshots` — weekly; liabilities stored negative. Net worth history exists only from the first snapshot on.
-- `investment_transactions`, `prices`, `fx_rates` (`EURUSD`, source ecb|wise), `review_log`, `plaid_items`, `sync_runs`.
+- `investment_transactions`, `prices`, `fx_rates` (`EURUSD`, source ecb or a provider name), `review_log`, `plaid_items`, `sync_runs`.
 
 Views:
 - `v_spending` — where money went. Excludes transfers; `spend_usd` positive = outflow; reimbursements appear as negative spend in their category.
@@ -62,11 +62,12 @@ Open read-only for Q&A: `sqlite3 "file:finance.db?mode=ro"` or `python -c "from 
 
 Exactly one `hub` account (the checking account pay lands in). Every pair below has the hub on one side; transfers
 between two non-hub accounts are not matched (`finance categorize transfer --txn <id>` marks them one at a time).
-hub → `credit` / `savings` / `fx_hub` accounts: netted (both legs hidden). `fx_hub` accounts (Wise balances) also net with each other.
+hub → `credit` / `savings` / `fx_hub` accounts: netted (both legs hidden). `fx_hub` accounts (multi-currency balances, e.g. Wise) also net with each other.
 hub → `ira` / `brokerage`: netted, hub leg carries the allocation category (from the schema category's `account:` field).
 hub → `liability`: **not** netted — the hub leg is the `debt_*` expense; only the loan-side receipt is hidden.
-Wise legs use Wise's own rate (recorded in `fx_rates` as source=wise); everything else ECB via frankfurter.
-Wise payments from senders in `config.toml [reimbursements] senders` → `is_reimbursement=1`, category `reimbursement_category`, never income.
+A provider that reports its own conversion rate (Wise) records it in `fx_rates` as source=<provider>; it wins that day. Everything else ECB via frankfurter.
+Inflows on any account whose `counterparty` or description matches `config.toml [reimbursements] senders` → `is_reimbursement=1`,
+category `reimbursement_category` (or `[reimbursements.categories]`), never income. The Zelle rule runs first.
 Zelle into the hub from senders in `config.toml [reimbursements.zelle]` → `is_reimbursement=1`, netted against the mapped category;
 an empty mapping leaves the category NULL with `needs_review=1` for a per-transaction pick.
 Merchants matching `[categorizer] per_transaction_patterns` (Zelle) are never merchant-mapped or sent to the LLM; they wait in
@@ -90,8 +91,8 @@ SELECT date, account_id, amount_usd, merchant_raw, review_reason FROM transactio
 
 ## Layout
 
-`finance/` package: `config.py` `db.py` `vault.py` `plaid_client.py` `wise_client.py` `fx.py` `accounts.py` `linking.py` `snapshot.py` `schedule.py` `cli.py`;
-`ingest/plaid_sync.py` `ingest/wise_sync.py` `ingest/csv_backfill/`; `pipeline/normalize.py` `matcher.py` `categorize.py`; `app/`;
+`finance/` package: `config.py` `db.py` `vault.py` `plaid_client.py` `fx.py` `accounts.py` `linking.py` `snapshot.py` `schedule.py` `cli.py`;
+`ingest/plaid_sync.py` `ingest/csv_backfill/`; `providers/` (`base.py` contract, `sync.py` storage, `wise.py`); `pipeline/normalize.py` `matcher.py` `categorize.py`; `app/`;
 `planner/month.py` (plan vs actual, used by `/dashboard`) `forecast.py` (blend: planned until 3 complete months of actuals,
 then trailing 3-month avg) `goals.py` (waterfall simulation + goal projections; `progress_source` = account id or allocation
 category id; null = "not yet trackable") `review.py`.

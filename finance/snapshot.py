@@ -12,9 +12,10 @@ from .config import Config
 from .db import sync_run
 from .fx import to_usd_rate
 from .ingest.plaid_sync import register_accounts
-from .ingest.wise_sync import register_balances
 from .plaid_client import PlaidClient, PlaidError
-from .wise_client import WiseClient, WiseError
+from .providers import Provider
+from .providers import load as load_providers
+from .providers.sync import register_accounts as register_provider_accounts
 
 
 def _store_balance(conn: sqlite3.Connection, account_id: str, today: str, native: float, currency: str) -> None:
@@ -64,16 +65,21 @@ def snapshot_plaid(conn: sqlite3.Connection, cfg: Config, client: PlaidClient, t
     return errors
 
 
-def snapshot_wise(conn: sqlite3.Connection, cfg: Config, client: WiseClient, today: str) -> list[str]:
+def snapshot_provider(conn: sqlite3.Connection, provider: Provider, today: str, schema_ids: set[str] | None = None) -> list[str]:
     try:
-        balances = client.balances()
-        by_bal = register_balances(conn, balances)
-        for b in balances:
-            _store_balance(conn, by_bal[int(b["id"])], today, float(b["amount"]["value"]), b["currency"])
+        ids = register_provider_accounts(conn, provider, provider.accounts(), schema_ids)
+        for b in provider.balances():
+            _store_balance(conn, ids[b.account_external_id], today, float(b.balance), b.currency.upper())
+        for h in provider.holdings():
+            conn.execute(
+                "INSERT INTO holdings_snapshots (account_id, date, ticker, name, quantity, price, value_usd) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(account_id, date, ticker) DO UPDATE SET quantity=excluded.quantity, price=excluded.price, value_usd=excluded.value_usd",
+                (ids[h.account_external_id], today, h.ticker, h.name, h.quantity, h.price, h.value_usd),
+            )
         conn.commit()
         return []
-    except WiseError as e:
-        return [f"wise: {e}"]
+    except Exception as e:  # one provider failing must not hide the others; run() raises with all of them
+        return [f"{provider.name}: {type(e).__name__}: {e}"]
 
 
 def run(conn: sqlite3.Connection, cfg: Config, notify: bool = True) -> dict:
@@ -82,8 +88,13 @@ def run(conn: sqlite3.Connection, cfg: Config, notify: bool = True) -> dict:
     with sync_run(conn, "snapshot") as stats:
         if conn.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]:
             errors += snapshot_plaid(conn, cfg, PlaidClient(cfg), today)
-        if cfg.optional_secret("WISE_TOKEN"):
-            errors += snapshot_wise(conn, cfg, WiseClient(cfg), today)
+        schema_ids = _schema_ids(cfg)
+        try:
+            provs = load_providers(cfg)
+        except Exception as e:
+            provs, errors = [], errors + [f"providers: {e}"]
+        for p in provs:
+            errors += snapshot_provider(conn, p, today, schema_ids)
         stats["added"] = conn.execute("SELECT COUNT(*) FROM balance_snapshots WHERE date=?", (today,)).fetchone()[0]
         if errors:
             msg = "; ".join(errors)
@@ -91,6 +102,15 @@ def run(conn: sqlite3.Connection, cfg: Config, notify: bool = True) -> dict:
                 _notify("Finance snapshot failed", msg[:200])
             raise RuntimeError(msg)
     return {"date": today, "accounts": stats["added"]}
+
+
+def _schema_ids(cfg: Config) -> set[str] | None:
+    from .vault import load_budget_schema
+
+    try:
+        return set(load_budget_schema(cfg.budget_schema_path).account_ids)
+    except Exception:
+        return None
 
 
 def _notify(title: str, text: str) -> None:

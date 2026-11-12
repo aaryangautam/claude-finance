@@ -75,11 +75,11 @@ class Config:
         return [s.lower() for s in self.raw.get("reimbursements", {}).get("senders", [])]
 
     @property
-    def wise_reimbursements(self) -> dict[str, str]:
-        """lowercased Wise sender substring -> category the payback nets against."""
+    def sender_reimbursements(self) -> dict[str, str]:
+        """lowercased sender substring -> category the payback nets against, for inflows on any account."""
         r = self.raw.get("reimbursements", {})
         out = {s: self.reimbursement_category for s in self.reimbursement_senders}
-        out.update({k.lower(): v for k, v in r.get("wise_categories", {}).items()})
+        out.update({k.lower(): v for k, v in r.get("categories", {}).items()})
         return out
 
     @property

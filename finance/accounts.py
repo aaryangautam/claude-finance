@@ -24,7 +24,7 @@ def map_account(conn: sqlite3.Connection, schema: BudgetSchema, old_id: str, new
     conn.execute("BEGIN")
     try:
         # free the UNIQUE provider ids on the old row, insert the new row so FK-referencing children can move, drop the old one
-        conn.execute("UPDATE accounts SET plaid_account_id=NULL, wise_balance_id=NULL WHERE id=?", (old_id,))
+        conn.execute("UPDATE accounts SET plaid_account_id=NULL, wise_balance_id=NULL, provider_account_id=NULL WHERE id=?", (old_id,))
         cols = ", ".join(row)
         conn.execute(f"INSERT INTO accounts ({cols}) VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
         for t in CHILD_TABLES:
@@ -43,5 +43,10 @@ def apply_roles(conn: sqlite3.Connection, schema: BudgetSchema) -> None:
     conn.commit()
 
 
+def is_provisional(account_id: str) -> bool:
+    """'plaid:<id>' or '<provider>:<id>': not yet mapped to a Budget Schema id (schema ids never contain ':')."""
+    return ":" in account_id
+
+
 def unmapped(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM accounts WHERE id LIKE 'plaid:%' ORDER BY institution").fetchall()
+    return [r for r in conn.execute("SELECT * FROM accounts ORDER BY institution").fetchall() if is_provisional(r["id"])]

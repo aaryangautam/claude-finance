@@ -37,7 +37,7 @@ def _ensure_account(conn: sqlite3.Connection, schema: BudgetSchema, account_id: 
     if not conn.execute("SELECT 1 FROM accounts WHERE id=?", (account_id,)).fetchone():
         a = schema.account(account_id)
         typ = {"hub": "checking", "savings": "savings", "liability": "loan", "credit": "credit", "ira": "ira",
-               "brokerage": "brokerage", "fx_hub": f"wise_{a.currency.lower()}"}[a.role]
+               "brokerage": "brokerage", "fx_hub": "multicurrency"}[a.role]
         conn.execute(
             "INSERT INTO accounts (id, institution, name, type, currency, role) VALUES (?,?,?,?,?,?)",
             (account_id, a.institution, account_id, typ, a.currency, a.role),

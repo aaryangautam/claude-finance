@@ -1,4 +1,5 @@
-"""FX rates to USD. ECB daily via frankfurter.app, cached in fx_rates. Wise legs use Wise's own rate (source='wise')."""
+"""FX rates to USD. ECB daily via frankfurter.app, cached in fx_rates. A provider that reports its own conversion rate
+(e.g. Wise) records it with source=<provider name>; that rate wins for its day."""
 
 from __future__ import annotations
 
@@ -15,12 +16,12 @@ class FxError(RuntimeError):
 
 
 def to_usd_rate(conn: sqlite3.Connection, currency: str, on: str) -> float:
-    """1 unit of `currency` in USD on date `on` (YYYY-MM-DD). Prefers Wise rate for that day, then cached ECB, then fetches."""
+    """1 unit of `currency` in USD on date `on` (YYYY-MM-DD). Prefers a provider rate for that day, then cached ECB, then fetches."""
     if currency == "USD":
         return 1.0
     pair = f"{currency}USD"
     row = conn.execute(
-        "SELECT rate FROM fx_rates WHERE date=? AND pair=? ORDER BY CASE source WHEN 'wise' THEN 0 ELSE 1 END LIMIT 1",
+        "SELECT rate FROM fx_rates WHERE date=? AND pair=? ORDER BY CASE source WHEN 'ecb' THEN 1 ELSE 0 END LIMIT 1",
         (on, pair),
     ).fetchone()
     if row:
@@ -68,10 +69,12 @@ def _fetch_range(conn: sqlite3.Connection, currency: str, start: date, end: date
     conn.commit()
 
 
-def record_wise_rate(conn: sqlite3.Connection, currency: str, on: str, rate_to_usd: float) -> None:
+def record_provider_rate(conn: sqlite3.Connection, currency: str, on: str, rate_to_usd: float, source: str) -> None:
+    if source == "ecb":
+        raise ValueError("source 'ecb' is reserved for frankfurter rates")
     conn.execute(
-        "INSERT OR REPLACE INTO fx_rates (date, pair, rate, source) VALUES (?, ?, ?, 'wise')",
-        (on, f"{currency}USD", rate_to_usd),
+        "INSERT OR REPLACE INTO fx_rates (date, pair, rate, source) VALUES (?, ?, ?, ?)",
+        (on, f"{currency}USD", rate_to_usd, source),
     )
 
 

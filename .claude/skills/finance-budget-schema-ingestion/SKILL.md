@@ -36,7 +36,7 @@ For accounts, every account the pipeline sees needs an id and a `role`. Roles dr
 
 - `hub` — exactly one: the checking account pay lands in and transfers leave from
 - `savings`, `credit`, `liability` (loans: the hub payment stays the debt expense), `ira`, `brokerage`
-- `fx_hub` — Wise balances, one account per currency, ids `wise_<currency>` (e.g. `wise_usd`, `wise_eur`), which is what the Wise sync creates
+- `fx_hub` — multi-currency balances (Wise or similar), one account per currency. The bundled Wise provider fills ids `wise_<currency>` (e.g. `wise_usd`, `wise_eur`) automatically when the schema uses them; other ids are mapped once with `finance accounts map`
 
 Transfers between two non-hub accounts aren't matched automatically; tell the user they'll mark those one at a time with `finance categorize transfer --txn <id>`.
 
@@ -102,7 +102,7 @@ accounts:                  # ids the pipeline uses; roles drive transfer netting
   - {id: card_everyday, institution: My Card Issuer, role: credit, currency: USD}
   - {id: roth_ira, institution: My Broker, role: ira, currency: USD}
   - {id: brokerage, institution: My Broker, role: brokerage, currency: USD}
-  - {id: wise_usd, institution: Wise, role: fx_hub, currency: USD}   # only if you use Wise
+  - {id: wise_usd, institution: Wise, role: fx_hub, currency: USD}   # only if you use a multi-currency provider
   - {id: wise_eur, institution: Wise, role: fx_hub, currency: EUR}
 waterfall:                 # ordered; the review checks these literally
   - step: 1

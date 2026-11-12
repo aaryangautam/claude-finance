@@ -88,7 +88,7 @@ def test_wise_payback_rule_flags_rows_imported_before_sender_listed(conn, schema
 
 
 def test_wise_category_senders_and_other_income(conn, schema, cfg):
-    cfg.raw["reimbursements"]["wise_categories"] = {"taxfree gmbh": "groceries"}
+    cfg.raw["reimbursements"]["categories"] = {"taxfree gmbh": "groceries"}
     cfg.raw["income"]["other_patterns"] = ["TAX REF"]
     cfg.raw["income"]["other_income_category"] = "travel"  # fixture schema has no income_other; any id proves the wiring
     v = add_tx(conn, "wise_eur", "2026-04-02", 35.0, "Received money from TAXFREE GmbH with April VAT Refund",

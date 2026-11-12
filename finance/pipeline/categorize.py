@@ -45,21 +45,6 @@ def apply_rules(conn: sqlite3.Connection, schema: BudgetSchema, cfg: Config) -> 
                 "WHERE account_id=? AND amount_usd>0 AND category IS NULL AND is_transfer=0 AND upper(merchant_raw) LIKE ?",
                 (cfg.income_category, hub, f"%{pat}%"),
             ).rowcount
-    # Wise paybacks (coworkers' phone shares): re-applied every run, so rows imported before a sender was listed
-    # get flagged too. Ingest only flags rows at insert time.
-    wise = cfg.wise_reimbursements
-    if wise:
-        fx = [a.id for a in schema.accounts_by_role("fx_hub")]
-        qs = ",".join("?" for _ in fx)
-        for sender, cat in wise.items():
-            if cat not in schema.category_ids:
-                raise ValueError(f"config Wise payback sender {sender!r}: category {cat!r} is not in the Budget Schema")
-            n += conn.execute(
-                "UPDATE transactions SET is_reimbursement=1, category=?, category_source='rule', category_confidence=1.0 "
-                f"WHERE account_id IN ({qs}) AND source='wise' AND amount_native>0 AND is_transfer=0 "
-                "AND category IS NULL AND lower(merchant_raw) LIKE ?",
-                (cat, *fx, f"%{sender}%"),
-            ).rowcount
     # Non-pay income on the hub (tax refunds, misc pay).
     oic = cfg.other_income_category
     if oic and oic in schema.category_ids:
@@ -69,7 +54,8 @@ def apply_rules(conn: sqlite3.Connection, schema: BudgetSchema, cfg: Config) -> 
                 "WHERE account_id=? AND amount_usd>0 AND category IS NULL AND is_transfer=0 AND upper(merchant_raw) LIKE ?",
                 (oic, hub, f"%{pat}%"),
             ).rowcount
-    # Zelle paybacks from friends: reimbursements netted against a category, never income.
+    # Zelle paybacks from friends: reimbursements netted against a category, never income. Runs before the generic
+    # sender rule so a person listed in both keeps their Zelle mapping.
     for sender, cat in cfg.zelle_reimbursements.items():
         if cat is not None and cat not in schema.category_ids:
             raise ValueError(f"config [reimbursements.zelle] {sender!r}: unknown category {cat!r}")
@@ -80,6 +66,17 @@ def apply_rules(conn: sqlite3.Connection, schema: BudgetSchema, cfg: Config) -> 
             "AND upper(merchant_raw) LIKE '%ZELLE%' AND lower(merchant_raw) LIKE ?",
             (cat, "rule" if cat else None, 1.0 if cat else None, 0 if cat else 1,
              None if cat else "zelle payback: pick the category it nets against", hub, f"%{sender}%"),
+        ).rowcount
+    # Paybacks from listed senders on any account (a Wise transfer, a provider's counterparty, a bank's "from <name>"
+    # description): re-applied every run, so rows imported before a sender was listed get flagged too.
+    for sender, cat in cfg.sender_reimbursements.items():
+        if cat not in schema.category_ids:
+            raise ValueError(f"config [reimbursements] sender {sender!r}: category {cat!r} is not in the Budget Schema")
+        n += conn.execute(
+            "UPDATE transactions SET is_reimbursement=1, category=?, category_source='rule', category_confidence=1.0 "
+            "WHERE amount_native>0 AND is_transfer=0 AND category IS NULL AND is_reimbursement=0 "
+            "AND lower(COALESCE(counterparty,'') || ' ' || COALESCE(merchant_raw,'')) LIKE ?",
+            (cat, f"%{sender}%"),
         ).rowcount
     conn.commit()
     return n

@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     needs_review        INTEGER NOT NULL DEFAULT 0,
     review_reason       TEXT,
     pending             INTEGER NOT NULL DEFAULT 0,
-    source              TEXT NOT NULL,          -- plaid|wise|csv_backfill
+    source              TEXT NOT NULL,          -- plaid|csv_backfill|<provider name>
     external_id         TEXT,                   -- provider id; NULL for backfill rows without one
     raw_json            TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),

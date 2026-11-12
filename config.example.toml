@@ -71,11 +71,12 @@ TRANSFER_OUT_WITHDRAWAL = "cash_atm"
 # People who pay you back for shared costs. Their payments are reimbursements (negative spend in a category),
 # never income. Leave the lists empty if this doesn't apply to you.
 #
-# Wise: sender names (substring of the Wise senderName / description) -> reimbursement_category above.
+# Sender names, matched against an inflow's counterparty (when a provider reports one, e.g. Wise's sender name) or
+# its description, on any account -> reimbursement_category above.
 senders = []   # e.g. ["jane doe", "john roe"]
 
-[reimbursements.wise_categories]
-# Wise senders whose paybacks net against a category other than reimbursement_category.
+[reimbursements.categories]
+# Senders whose paybacks net against a category other than reimbursement_category.
 # "some refund gmbh" = "shopping_household"
 
 [reimbursements.zelle]
@@ -86,7 +87,7 @@ senders = []   # e.g. ["jane doe", "john roe"]
 # "john roe" = ""
 
 [fx]
-# Base for non-Wise legs. Wise transfer records override this for Wise legs.
+# ECB rates for everything, except where a provider reports its own conversion rate (Wise does), which wins that day.
 provider = "frankfurter"   # ECB daily via frankfurter.app
 base = "USD"
 
@@ -97,6 +98,21 @@ payroll_patterns = ["PAYROLL", "DIRECT DEP"]
 # Hub inflows that are income but not pay (tax refunds, bonuses) -> other_income_category, if it is in the schema.
 other_patterns = ["TAX REF", "IRS TREAS"]
 other_income_category = "income_other"
+
+# --- Providers: data sources beyond Plaid ------------------------------------------------------------------
+# Each [providers.<name>] table enables one. The name tags its rows and provisional account ids; `module` is any
+# importable "package.module:Class" subclassing finance.providers.Provider (optional for bundled ones); every other
+# key is handed to the provider as settings. `finance sync all` and the weekly snapshot run every enabled provider.
+# See README "Adding a data source" to write your own.
+#
+# [providers.wise]                       # bundled: multi-currency balances + statements (read-only token)
+# token_env = "WISE_TOKEN"
+# key_path_env = "WISE_PRIVATE_KEY_PATH"  # optional: SCA signing key, needed for statements in the EU/UK
+# days = 90
+#
+# [providers.mybroker]
+# module = "my_providers.mybroker:MyBrokerProvider"
+# token_env = "MYBROKER_TOKEN"
 
 [snapshot]
 log = "~/Library/Logs/finance-snapshot.log"

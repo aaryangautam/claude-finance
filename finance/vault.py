@@ -166,6 +166,9 @@ def load_budget_schema(path: Path) -> BudgetSchema:
             )
         )
     aids = [a.id for a in accts]
+    bad = [a for a in aids if ":" in a]
+    if bad:
+        raise SchemaError(f"account ids can't contain ':' (reserved for provisional plaid:/provider: ids): {bad}")
     if len(set(aids)) != len(aids):
         raise SchemaError("duplicate account ids")
     hubs = [a.id for a in accts if a.role == "hub"]

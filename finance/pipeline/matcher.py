@@ -1,12 +1,12 @@
 """Transfer matcher. Deterministic, driven by account roles from the Budget Schema.
 
 Topology it assumes (see README "Money-flow model"): exactly one `hub` account (the checking account pay lands in
-and transfers leave from); every other account pairs with the hub; `fx_hub` accounts (Wise balances) also pair with
+and transfers leave from); every other account pairs with the hub; `fx_hub` accounts (multi-currency balances, e.g. Wise) also pair with
 each other. Transfers between two non-hub accounts (card paid from savings, brokerage -> IRA) are not matched: use
 `finance categorize transfer --txn <id>` for those.
 
 Modes per pair:
-  net         both legs is_transfer=1, shared group, no category            (hub<->credit, hub<->savings, hub<->wise, wise_usd<->wise_eur)
+  net         both legs is_transfer=1, shared group, no category            (hub<->credit, hub<->savings, hub<->fx_hub, fx_hub<->fx_hub)
   allocation  both legs is_transfer=1; the hub leg carries the allocation   (hub->ira, hub->brokerage; category from schema `account:`)
               category so it shows in the budget view
   expense     only the destination leg is flagged; the hub leg stays a       (hub->loan: the payment is the Debt expense line)
@@ -14,7 +14,7 @@ Modes per pair:
 
 Real-data rules:
   - credit pairs match hub->card only; a card purchase never pairs with a hub inflow.
-  - legs touching an fx_hub (Wise) allow FX_FEE_PCT of the amount on top of the USD tolerance (Wise takes a fee).
+  - legs touching an fx_hub allow FX_FEE_PCT of the amount on top of the USD tolerance (conversion fees).
   - same-day liability inflows are summed before matching (some banks split a loan payment into principal + interest).
   - hub outflows to an ira/brokerage with no cash leg match the account's `contribution` row in investment_transactions
     (Plaid reports some brokerages' deposits only there), within INVEST_WINDOW_DAYS after the hub debit.

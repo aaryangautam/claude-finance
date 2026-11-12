@@ -36,7 +36,7 @@ def cmd_init(args):
     except Exception as e:
         print(f"budget schema: {e}")
     if not (cfg.root / ".env").exists():
-        print("no .env yet: copy .env.example and fill in Plaid + Wise credentials")
+        print("no .env yet: copy .env.example and fill in the Plaid credentials (plus any provider tokens)")
 
 
 def cmd_status(args):
@@ -47,7 +47,7 @@ def cmd_status(args):
         print(f"  {r['institution']:<12} {r['status']:<15} synced {r['last_synced'] or 'never'}  {r['last_error'] or ''}")
     print("Accounts:")
     for r in conn.execute("SELECT id, institution, type, currency, name FROM accounts ORDER BY institution, id"):
-        flag = "  (UNMAPPED)" if r["id"].startswith("plaid:") else ""
+        flag = "  (UNMAPPED)" if ":" in r["id"] else ""
         print(f"  {r['id']:<40} {r['institution']:<10} {r['type']:<10} {r['currency']}  {r['name'] or ''}{flag}")
     n = conn.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM transactions").fetchone()
     print(f"Transactions: {n[0]} ({n[1]} .. {n[2]})")
@@ -57,20 +57,39 @@ def cmd_status(args):
 
 
 def cmd_sync(args):
+    from . import providers
+    from .providers import sync as provider_sync
+
     cfg = _cfg()
     conn = open_db(cfg.db_path)
+    names = list(providers.configured(cfg))
+    if args.source not in ("plaid", "all", *names):
+        raise SystemExit(f"unknown source {args.source!r}: plaid, all, or a [providers.<name>] from config.toml ({names or 'none configured'})")
     if args.source in ("plaid", "all"):
         from .ingest import plaid_sync
 
-        res = plaid_sync.sync_all(conn, cfg, only=args.item)
-        print("plaid:", json.dumps(res, indent=2))
-    if args.source == "all" and not cfg.optional_secret("WISE_TOKEN"):
-        print("wise: skipped (no WISE_TOKEN in .env)")
-    elif args.source in ("wise", "all"):
-        from .ingest import wise_sync
-
-        res = wise_sync.sync(conn, cfg, days=args.days)
-        print("wise:", json.dumps(res, indent=2))
+        if args.source == "all" and not conn.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]:
+            print("plaid: skipped (no Items linked yet; run `finance app`)")
+        else:
+            res = plaid_sync.sync_all(conn, cfg, only=args.item)
+            print("plaid:", json.dumps(res, indent=2))
+    schema_ids = None
+    try:
+        schema_ids = set(load_budget_schema(cfg.budget_schema_path).account_ids)
+    except Exception:
+        pass  # no schema yet: provider accounts get provisional ids
+    failed = []
+    for name in names if args.source == "all" else [n for n in names if n == args.source]:
+        try:
+            p = providers.get(cfg, name)
+            days = args.days or int(p.settings.get("days", 90))
+            print(f"{name}:", json.dumps(provider_sync.sync(conn, p, days=days, schema_ids=schema_ids), indent=2))
+        except Exception as e:
+            if args.source != "all":
+                raise
+            failed.append(f"{name}: {type(e).__name__}: {e}")
+    if failed:
+        raise RuntimeError("; ".join(failed))
 
 
 def cmd_snapshot(args):
@@ -126,7 +145,7 @@ def cmd_accounts(args):
     cfg = _cfg(require_env=False)
     conn = open_db(cfg.db_path)
     if args.action == "list":
-        for r in conn.execute("SELECT id, institution, type, currency, name, plaid_account_id, wise_balance_id FROM accounts ORDER BY institution, id"):
+        for r in conn.execute("SELECT id, institution, type, currency, name FROM accounts ORDER BY institution, id"):
             print(f"  {r['id']:<40} {r['institution']:<10} {r['type']:<10} {r['currency']}  {r['name'] or ''}")
     elif args.action == "map":
         from .accounts import map_account
@@ -268,9 +287,9 @@ def main(argv=None):
     sub.add_parser("schema", help="print the parsed Budget Schema").set_defaults(fn=cmd_schema)
 
     s = sub.add_parser("sync", help="pull transactions")
-    s.add_argument("source", choices=["plaid", "wise", "all"])
+    s.add_argument("source", help="plaid, all, or the name of a [providers.<name>] table in config.toml")
     s.add_argument("--item", help="plaid: only this institution")
-    s.add_argument("--days", type=int, default=90, help="wise: statement window")
+    s.add_argument("--days", type=int, help="providers: how many days back (default: the provider's `days`, else 90)")
     s.set_defaults(fn=cmd_sync)
 
     s = sub.add_parser("snapshot", help="balances + holdings -> snapshots (the scheduled job)")
@@ -297,7 +316,7 @@ def main(argv=None):
     s = sub.add_parser("accounts")
     ss = s.add_subparsers(dest="action", required=True)
     ss.add_parser("list")
-    m = ss.add_parser("map", help="rename a provisional plaid:<id> account to its schema id")
+    m = ss.add_parser("map", help="rename a provisional plaid:<id> or <provider>:<id> account to its schema id")
     m.add_argument("old_id")
     m.add_argument("new_id")
     s.set_defaults(fn=cmd_accounts)
@@ -312,7 +331,7 @@ def main(argv=None):
     s = sub.add_parser("backfill", help="one-time CSV import (optional adapters for history older than Plaid's window)")
     s.add_argument("institution", choices=sorted(PARSERS), help="CSV layout; 'generic' = Date, Description, signed Amount")
     s.add_argument("file")
-    s.add_argument("--account", help="schema account id the file belongs to (required for all but wise)")
+    s.add_argument("--account", help="schema account id the file belongs to (required for all but wise, which uses wise_<currency>)")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_backfill)
 

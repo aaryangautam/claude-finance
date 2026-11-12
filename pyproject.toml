@@ -1,7 +1,7 @@
 [project]
 name = "claude-finance"
 version = "0.1.0"
-description = "Local-first personal finance for Claude Code: Plaid + Wise -> SQLite, deterministic pipelines, an Obsidian plan layer"
+description = "Local-first personal finance for Claude Code: Plaid + pluggable providers -> SQLite, deterministic pipelines, an Obsidian plan layer"
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -42,7 +42,7 @@ def conn(cfg, schema) -> sqlite3.Connection:
     c = open_db(cfg.db_path)
     for a in schema.accounts:
         typ = {"hub": "checking", "savings": "savings", "liability": "loan", "credit": "credit", "ira": "ira",
-               "brokerage": "brokerage", "fx_hub": f"wise_{a.currency.lower()}"}[a.role]
+               "brokerage": "brokerage", "fx_hub": "multicurrency"}[a.role]
         c.execute("INSERT INTO accounts (id, institution, name, type, currency, role) VALUES (?,?,?,?,?,?)",
                   (a.id, a.institution, a.id, typ, a.currency, a.role))
     c.commit()
